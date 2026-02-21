@@ -29,7 +29,7 @@ class Event(Base, TimestampMixin):
     longitude = Column(Numeric(9,6))
 
     capacity = Column(Integer, nullable=False)
-    status = Column(Enum(EventStatus), default=EventStatus.draft)
+    status = Column(Enum(EventStatus), default=EventStatus.draft)  # type: ignore[var-annotated]
 
     organizer = relationship("User", back_populates="events")
     category = relationship("Category", back_populates="events")

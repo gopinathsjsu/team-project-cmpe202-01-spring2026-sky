@@ -16,7 +16,7 @@ class Registration(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey('users.id'), nullable=False)
     event_id = Column(UUID(as_uuid=True), ForeignKey('events.id'), nullable=False)
 
-    status = Column(Enum(RegistrationStatus), default=RegistrationStatus.confirmed)
+    status = Column(Enum(RegistrationStatus), default=RegistrationStatus.confirmed)  # type: ignore[var-annotated]
     quantity = Column(Integer, nullable=False, default=1)
     registered_at = Column(DateTime, server_default=func.now())
 
