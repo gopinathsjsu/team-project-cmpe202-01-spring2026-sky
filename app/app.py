@@ -3,7 +3,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.routers import users, events
-from . import models
+from . import models  # noqa: F401
 from .database import engine, Base
 
 app = FastAPI(title="Event Platform API")
