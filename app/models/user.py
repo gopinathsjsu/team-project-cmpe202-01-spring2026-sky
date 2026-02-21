@@ -16,7 +16,7 @@ class User(Base, TimestampMixin):
     full_name = Column(String, nullable=False)
     password_hash = Column(String, nullable=False)
     email = Column(String, nullable=False)
-    role = Column(Enum(UserRole), nullable=False)
+    role = Column(Enum(UserRole), nullable=False)  # type: ignore[var-annotated]
     is_active = Column(Boolean, nullable=False, default=True)
 
     events = relationship("Event", back_populates="organizer")

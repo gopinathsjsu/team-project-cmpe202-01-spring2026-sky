@@ -25,5 +25,5 @@ def get_db():
 
 @app.get("/test-db")
 def test_db(db: Session = Depends(get_db)):
-    result = db.execute(text("SELECT 1")).fetchone()
-    return {"database_response": result[0]}
+    result = db.execute(text("SELECT 1")).scalar_one_or_none()
+    return {"database_response": result}
