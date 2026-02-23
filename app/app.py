@@ -1,16 +1,21 @@
+from dotenv import load_dotenv
 from fastapi import FastAPI, Depends
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.database import SessionLocal
-from app.routers import users, events
+from app.routers import users, events, authentication
 from . import models  # noqa: F401
 from .database import engine, Base
+
+load_dotenv()
 
 app = FastAPI(title="Event Platform API")
 Base.metadata.create_all(bind=engine)
 print(Base.metadata.tables.keys())
+
 app.include_router(users.router)
 app.include_router(events.router)
+app.include_router(authentication.router)
 
 @app.get("/")
 def root():
