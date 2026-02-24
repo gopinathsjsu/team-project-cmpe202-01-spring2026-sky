@@ -30,6 +30,17 @@ class ConfirmRequest(BaseModel):
     email: EmailStr
     code: str
 
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+class LogoutRequest(BaseModel):
+    access_token: str
+
+
 @router.post("/signup")
 def signup(data: SignUpRequest):
     try:
@@ -63,3 +74,51 @@ def confirm_signup(data: ConfirmRequest):
         return {"message": "User confirmed successfully", "statusCode": 200}
     except ClientError as e:
         raise HTTPException(400, e.response["Error"]["Message"])
+
+@router.post("/login")
+def login(data: LoginRequest):
+    try:
+        response = cognito.initiate_auth(
+            ClientId=CLIENT_ID,
+            AuthFlow="USER_PASSWORD_AUTH",
+            AuthParameters={
+                "USERNAME": data.email,
+                "PASSWORD": data.password,
+            },
+        )
+
+        return response["AuthenticationResult"]
+    except cognito.exceptions.NotAuthorizedException:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    except cognito.exceptions.UserNotConfirmedException:
+        raise HTTPException(status_code=403, detail="User not confirmed")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+def refresh_token(data: RefreshRequest):
+    try:
+        response = cognito.initiate_auth(
+            ClientId=CLIENT_ID,
+            AuthFlow="REFRESH_TOKEN_AUTH",
+            AuthParameters={
+                "REFRESH_TOKEN": data.refresh_token,
+            },
+        )
+
+        return response["AuthenticationResult"]
+
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+@router.post("/logout")
+def logout_user(data: LogoutRequest):
+    try:
+        cognito.global_sign_out(
+            AccessToken=data.access_token,
+        )
+        return {"message": "User logged out successfully", "statusCode": 200}
+    except ClientError as e:
+        error_code = e.response.get("Error", {}).get("Code", "")
+        if error_code in {"NotAuthorizedException", "InvalidParameterException"}:
+            raise HTTPException(status_code=401, detail="Invalid or expired access token")
+        raise HTTPException(status_code=400, detail=e.response["Error"]["Message"])
