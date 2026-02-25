@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import Request, APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from ..database import SessionLocal
 from app.dependencies import get_current_user, require_group, CurrentUser
@@ -18,8 +18,9 @@ def get_db():
 router = APIRouter(prefix="/users", tags=["users"])
 
 @router.get("/me")
-def get_profile(user: CurrentUser = Depends(get_current_user)):
-    pass
+def get_profile(request:Request, user: CurrentUser = Depends(get_current_user)):
+    event = request.scope.get("aws.event", {})
+    print("EVENT:", event)
 
 @router.patch("/me")
 def update_profile(user: CurrentUser = Depends(get_current_user)):

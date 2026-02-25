@@ -6,10 +6,12 @@ from app.database import SessionLocal
 from app.routers import users, events, authentication, RSVP, admin
 from . import models  # noqa: F401
 from .database import engine, Base
+from mangum import Mangum
 
 load_dotenv()
 
 app = FastAPI(title="Event Platform API")
+handler = Mangum(app)
 Base.metadata.create_all(bind=engine)
 
 app.include_router(users.router)
