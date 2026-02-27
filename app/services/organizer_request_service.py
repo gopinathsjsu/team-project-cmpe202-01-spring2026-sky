@@ -18,7 +18,7 @@ def get_request_by_id(db: Session, request_id: UUID):
         .first()
 
 
-def create_request(db: Session, user_id: str, message: Optional[str] = None):
+def create_request(db: Session, user_id: UUID, message: Optional[str] = None):
     request = OrganizerRequest(
         user_id=user_id,
         message=message,
@@ -34,7 +34,7 @@ def update_request_status(
     db: Session,
     request: OrganizerRequest,
     status: RequestStatus,
-    reviewed_by: str
+    reviewed_by: UUID
 ):
     request.status = status
     request.reviewed_by = reviewed_by
@@ -45,10 +45,9 @@ def update_request_status(
 
     return request
 
-def get_pending_request(db: Session, user_id: str):
+def get_pending_request(db: Session, user_id: UUID):
     return db.query(OrganizerRequest)\
         .filter(
             OrganizerRequest.user_id == user_id,
             OrganizerRequest.status == RequestStatus.pending
-        )\
-        .first()
+        ).first()

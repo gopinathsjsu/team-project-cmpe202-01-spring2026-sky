@@ -1,51 +1,74 @@
+import os
+import boto3
+
 from fastapi import Request, HTTPException, Depends
-from typing import Optional, List
+from sqlalchemy.orm import Session
+from app.database import get_db
+from app.models.User import User, UserRole
 
 
-class CurrentUser:
-    def __init__(self, sub: str, email: Optional[str], groups: List[str]):
-        self.sub = sub
-        self.email = email
-        self.groups = groups
+
+cognito_client = boto3.client("cognito-idp")
+USER_POOL_ID = os.environ["COGNITO_USER_POOL_ID"]
 
 
-def get_current_user(request: Request) -> CurrentUser:
-    try:
-        claims = (
-            request.scope.get("aws.event", {})
-            .get("requestContext", {})
-            .get("authorizer", {})
-            .get("jwt", {})
-            .get("claims", {})
-        )
+def fetch_cognito_user(sub: str):
+    response = cognito_client.admin_get_user(
+        UserPoolId=USER_POOL_ID,
+        Username=sub
+    )
 
-        if not claims:
-            raise HTTPException(status_code=401, detail="Unauthorized")
+    attributes = {
+        attr["Name"]: attr["Value"]
+        for attr in response["UserAttributes"]
+    }
 
-        print(claims)
-        sub = claims.get("sub")
-        email = claims.get("email")
-        groups = claims.get("cognito:groups", [])
-        print(sub)
-        print(email)
-        print(groups)
+    return attributes
 
-        if not sub:
-            raise HTTPException(status_code=401, detail="Unauthorized")
 
-        return CurrentUser(
-            sub=sub,
-            email=email,
-            groups=groups if isinstance(groups, list) else [],
-        )
+def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
+    claims = (
+        request.scope.get("aws.event", {})
+        .get("requestContext", {})
+        .get("authorizer", {})
+        .get("jwt", {})
+        .get("claims", {})
+    )
 
-    except Exception:
+    groups = claims.get("cognito:groups", [])
+    role = UserRole.admin if "admin" in groups else UserRole.attendee
+
+    if not claims:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
+    print(claims)
+    sub = claims.get("sub")
 
-def require_group(group: str):
-    def wrapper(user: CurrentUser = Depends(get_current_user)):
-        if group not in user.groups:
-            raise HTTPException(403, "Forbidden")
+    if not sub:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    user = db.query(User).filter_by(cognito_sub=sub).first()
+    if user:
         return user
-    return wrapper                  
+    
+    cognito_attributes = fetch_cognito_user(sub)
+
+    email = cognito_attributes.get("email")
+
+    user = User(
+        cognito_sub=sub,
+        email=email,
+        role=role)
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return user
+
+
+def require_role(required_role: UserRole):
+    def wrapper(user: User = Depends(get_current_user)):
+        if user.role != required_role:
+            raise HTTPException(status_code=403, detail="Forbidden")
+        return user
+    return wrapper
