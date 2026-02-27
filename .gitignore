@@ -29,3 +29,5 @@ ENV/
 htmlcov/
 
 backend/
+app/.mypy_cache/
+app/.ruff-cache/
