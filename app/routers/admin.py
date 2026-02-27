@@ -1,73 +1,116 @@
 from uuid import UUID
 
+from ..database import get_db
 from fastapi import APIRouter, Depends, HTTPException
-from app.dependencies import require_group, CurrentUser
+from app.dependencies import require_role
 import boto3
 import os
-from pydantic import BaseModel
 from app.services.organizer_request_service import (
     get_all_pending_requests,
     get_request_by_id,
     update_request_status
 )
 from app.models.organizer_request import RequestStatus
+from app.models.User import User, UserRole
 from sqlalchemy.orm import Session
-from app.database import SessionLocal
 
-
-class PromoteRequest(BaseModel):
-    role: str
 
 AWS_REGION = os.getenv("AWS_REGION")
-USER_POOL_ID = os.getenv("USER_POOL_ID")
+USER_POOL_ID = os.getenv("COGNITO_USER_POOL_ID") or os.getenv("USER_POOL_ID")
 
 cognito = boto3.client("cognito-idp", region_name=AWS_REGION)
 router = APIRouter(prefix="/admin", tags=["admin"])
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
-@router.get("/events/pending", dependencies=[Depends(require_group("admin"))])
+def ensure_cognito_config():
+    if not USER_POOL_ID:
+        raise HTTPException(status_code=500, detail="COGNITO_USER_POOL_ID is not configured")
+
+
+
+@router.get("/events/pending", dependencies=[Depends(require_role(UserRole.admin))])
 def pending_events():
     pass
 
-@router.patch("/events/{event_id}/approve", dependencies=[Depends(require_group("admin"))])
+@router.patch("/events/{event_id}/approve", dependencies=[Depends(require_role(UserRole.admin))])
 def approve_event(event_id: str):
     pass
 
-@router.patch("/events/{event_id}/reject", dependencies=[Depends(require_group("admin"))])
+@router.patch("/events/{event_id}/reject", dependencies=[Depends(require_role(UserRole.admin))])
 def reject_event(event_id: str):
     pass
 
 @router.patch("/users/{user_id}/promote")
 def promote_user(
     user_id: str,
-    payload: PromoteRequest,
-    admin_user: CurrentUser = Depends(require_group("admin"))
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(require_role(UserRole.admin))
 ):
-
-    if payload.role != "admin":
-        raise HTTPException(400, "Only admin promotion allowed here")
-
-    if admin_user.sub == user_id:
+    ensure_cognito_config()
+    
+    user = db.query(User).filter_by(id=user_id).first()
+    if not user:
+        raise HTTPException(404, "User not found")
+    
+    if admin_user.id == user.id:
         raise HTTPException(403, "Cannot modify your own admin role")
 
     cognito.admin_add_user_to_group(
         UserPoolId=USER_POOL_ID,
-        Username=user_id,
+        Username=user.cognito_sub,
         GroupName="admin"
     )
 
+    cognito.admin_remove_user_from_group(
+        UserPoolId=USER_POOL_ID,
+        Username=user.cognito_sub,
+        GroupName="admin"
+    )
+
+    user.role = UserRole.admin
+    db.commit()
+
     return {"message": "User promoted to admin"}
+
+@router.patch("/users/{user_id}/revoke")
+def revoke_admin_role(
+    user_id: UUID,
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(require_role(UserRole.admin))
+):
+    ensure_cognito_config()
+
+    user = db.query(User).filter_by(id=user_id).first()
+    if not user:
+        raise HTTPException(404, "User not found")
+
+    if admin_user.id == user.id:
+        raise HTTPException(403, "Cannot modify your own admin role")
+
+    if user.role != UserRole.admin:
+        raise HTTPException(400, "User is not an admin")
+
+    cognito.admin_remove_user_from_group(
+        UserPoolId=USER_POOL_ID,
+        Username=user.cognito_sub,
+        GroupName="admin"
+    )
+
+    cognito.admin_add_user_to_group(
+        UserPoolId=USER_POOL_ID,
+        Username=user.cognito_sub,
+        GroupName="attendee"
+    )
+
+    user.role = UserRole.attendee
+    db.commit()
+
+    return {"message": "User admin role revoked"}
 
 @router.get("/organizer-requests")
 def list_requests(
     db: Session = Depends(get_db),
-    admin=Depends(require_group("admin"))
+    admin_user: User = Depends(require_role(UserRole.admin))
 ):
     return get_all_pending_requests(db)
 
@@ -76,34 +119,45 @@ def list_requests(
 def approve_request(
     request_id: UUID,
     db: Session = Depends(get_db),
-    admin_user: CurrentUser = Depends(require_group("admin"))
+    admin_user: User = Depends(require_role(UserRole.admin))
 ):
+    ensure_cognito_config()
     request = get_request_by_id(db, request_id)
 
-    if not request or request.status != RequestStatus.pending:
+    if not request:
         raise HTTPException(404, "Invalid request")
+    
+    if request.status != RequestStatus.pending:
+        raise HTTPException(400, "Request already processed")
+    
+    user = db.query(User).filter_by(id=request.user_id).first()
+    if not user:
+        raise HTTPException(404, "User not found")
+    
+    cognito_sub = user.cognito_sub
 
-    user_id = request.user_id
 
     # Remove attendee
     cognito.admin_remove_user_from_group(
         UserPoolId=USER_POOL_ID,
-        Username=user_id,
+        Username=cognito_sub,
         GroupName="attendee"
     )
 
     # Add organizer
     cognito.admin_add_user_to_group(
         UserPoolId=USER_POOL_ID,
-        Username=user_id,
+        Username=cognito_sub,
         GroupName="organizer"
     )
+
+    user.role = UserRole.organizer
 
     update_request_status(
         db=db,
         request=request,
         status=RequestStatus.approved,
-        reviewed_by=admin_user.sub
+        reviewed_by=admin_user.id
     )
 
     return {"message": "Approved", "force_refresh": True}
@@ -113,18 +167,24 @@ def approve_request(
 def reject_request(
     request_id: UUID,
     db: Session = Depends(get_db),
-    admin_user: CurrentUser = Depends(require_group("admin"))
+    admin_user: User = Depends(require_role(UserRole.admin))
 ):
     request = get_request_by_id(db, request_id)
 
-    if not request or request.status != RequestStatus.pending:
+    if not request:
         raise HTTPException(404, "Invalid request")
+    
+    if request.status == RequestStatus.approved:
+        raise HTTPException(400, "Request already approved")
+
+    if request.status != RequestStatus.pending:
+        raise HTTPException(400, "Request already processed")
 
     update_request_status(
         db=db,
         request=request,
         status=RequestStatus.rejected,
-        reviewed_by=admin_user.sub
+        reviewed_by=admin_user.id
     )
 
     return {"message": "Rejected"}

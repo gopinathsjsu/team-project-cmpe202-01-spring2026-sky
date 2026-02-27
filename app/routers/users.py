@@ -1,7 +1,7 @@
+from ..database import get_db
 from app.models.User import User, UserRole
 from fastapi import Request, APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from ..database import SessionLocal
 from app.dependencies import get_current_user, require_role
 from app.services.organizer_request_service import (
     create_request,
@@ -9,12 +9,6 @@ from app.services.organizer_request_service import (
 )
 
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
         
 router = APIRouter(prefix="/users", tags=["users"])
 
