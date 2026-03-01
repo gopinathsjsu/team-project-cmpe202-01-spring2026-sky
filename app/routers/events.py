@@ -38,7 +38,7 @@ def get_event(event_id: str):
     pass
 
 # Organizer
-@router.post("/{organizer_id}", dependencies=[Depends(require_role(UserRole.organizer))])
+@router.post("/create", dependencies=[Depends(require_role(UserRole.organizer))])
 def create_event(
     payload: CreateEventRequest,
     db: Session = Depends(get_db),
@@ -52,7 +52,7 @@ def create_event(
         if not category:
             category = Category(name=payload.category)
             db.add(category)
-            db.flush()  # Ensure category is flushed to get an ID   
+            db.flush()
         payload.category_id = category.id
     event = Event(
         organizer_id=user.id,

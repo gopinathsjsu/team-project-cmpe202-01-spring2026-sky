@@ -16,7 +16,6 @@ if TYPE_CHECKING:
 
 
 class EventStatus(str, enum.Enum):
-    draft = "draft"
     pending_approval = "pending_approval"
     approved = "approved"
     rejected = "rejected"
@@ -45,7 +44,7 @@ class Event(Base, TimestampMixin):
     longitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
 
     capacity: Mapped[int] = mapped_column(Integer, nullable=False)
-    status: Mapped[EventStatus] = mapped_column(Enum(EventStatus), default=EventStatus.draft)
+    status: Mapped[EventStatus] = mapped_column(Enum(EventStatus), default=EventStatus.pending_approval)
 
     organizer: Mapped["User"] = relationship("User", back_populates="events")
     category: Mapped[Optional["Category"]] = relationship("Category", back_populates="events")
