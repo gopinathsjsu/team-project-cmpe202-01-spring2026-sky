@@ -11,8 +11,10 @@ from app.services.organizer_request_service import (
     update_request_status
 )
 from app.models.organizer_request import RequestStatus
+from app.models.Event import Event, EventStatus
 from app.models.User import User, UserRole
 from sqlalchemy.orm import Session
+
 
 
 AWS_REGION = os.getenv("AWS_REGION")
@@ -27,18 +29,26 @@ def ensure_cognito_config():
         raise HTTPException(status_code=500, detail="COGNITO_USER_POOL_ID is not configured")
 
 
-
 @router.get("/events/pending", dependencies=[Depends(require_role(UserRole.admin))])
-def pending_events():
-    pass
+def pending_events(db: Session = Depends(get_db)):
+    return db.query(Event).filter(Event.status == EventStatus.pending_approval).all()
+
 
 @router.patch("/events/{event_id}/approve", dependencies=[Depends(require_role(UserRole.admin))])
-def approve_event(event_id: str):
-    pass
+def approve_event(event_id: UUID, db: Session = Depends(get_db)):
+    event = get_pending_event_or_raise_exception(db, event_id)
+    event.status = EventStatus.approved
+    db.commit()
+    db.refresh(event)
+    return {"message": "Event approved", "event_id": str(event.id), "status": event.status}
 
 @router.patch("/events/{event_id}/reject", dependencies=[Depends(require_role(UserRole.admin))])
-def reject_event(event_id: str):
-    pass
+def reject_event(event_id: UUID, db: Session = Depends(get_db)):
+    event = get_pending_event_or_raise_exception(db, event_id)
+    event.status = EventStatus.rejected
+    db.commit()
+    db.refresh(event)
+    return {"message": "Event rejected", "event_id": str(event.id), "status": event.status}
 
 @router.patch("/users/{user_id}/promote")
 def promote_user(
@@ -69,6 +79,7 @@ def promote_user(
 
     user.role = UserRole.admin
     db.commit()
+    db.refresh(user)
 
     return {"message": "User promoted to admin"}
 
@@ -104,6 +115,7 @@ def revoke_admin_role(
 
     user.role = UserRole.attendee
     db.commit()
+    db.refresh(user)
 
     return {"message": "User admin role revoked"}
 
@@ -188,3 +200,12 @@ def reject_request(
     )
 
     return {"message": "Rejected"}
+
+
+def get_pending_event_or_raise_exception(db: Session, event_id: UUID) -> Event:
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(404, "Event not found")
+    if event.status != EventStatus.pending_approval:
+        raise HTTPException(400, "Event is not pending approval")
+    return event
