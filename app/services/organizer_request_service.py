@@ -2,7 +2,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 from app.models.organizer_request import OrganizerRequest, RequestStatus
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 
@@ -38,7 +38,7 @@ def update_request_status(
 ):
     request.status = status
     request.reviewed_by = reviewed_by
-    request.reviewed_at = datetime.utcnow()
+    request.reviewed_at = datetime.now(timezone.utc)
 
     db.commit()
     db.refresh(request)
