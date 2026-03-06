@@ -1,23 +1,31 @@
 import uuid
 import enum
-from sqlalchemy import Column, String, Boolean, Enum
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
+from typing import TYPE_CHECKING
+from sqlalchemy import String, Boolean, Enum
+from uuid import UUID as PyUUID
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.orm import relationship, Mapped, mapped_column
 from .Base import Base, TimestampMixin
+
+if TYPE_CHECKING:
+    from .Event import Event
+    from .Registration import Registration
+
 
 class UserRole(str, enum.Enum):
     attendee = "attendee"
     organizer = "organizer"
     admin = "admin"
 
+
 class User(Base, TimestampMixin):
     __tablename__ = "users"
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    full_name = Column(String, nullable=False)
-    password_hash = Column(String, nullable=False)
-    email = Column(String, nullable=False)
-    role = Column(Enum(UserRole), nullable=False)  # type: ignore[var-annotated]
-    is_active = Column(Boolean, nullable=False, default=True)
 
-    events = relationship("Event", back_populates="organizer")
-    registrations = relationship("Registration", back_populates="user")
+    id: Mapped[PyUUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    cognito_sub: Mapped[str] = mapped_column(String, unique=True)
+    email: Mapped[str] = mapped_column(String, nullable=False)
+    role: Mapped[UserRole] = mapped_column(Enum(UserRole))
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    events: Mapped[list["Event"]] = relationship("Event", back_populates="organizer")
+    registrations: Mapped[list["Registration"]] = relationship("Registration", back_populates="user")

@@ -1,7 +1,33 @@
-from fastapi import APIRouter, Depends
-from app.dependencies import get_current_user, require_group, CurrentUser
+from datetime import datetime
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.models.Category import Category
+from app.models.Event import Event, EventStatus
+from app.models.Registration import Registration, RegistrationStatus
+from app.models.User import User, UserRole
+from app.dependencies import get_current_user, require_role
 
 router = APIRouter(prefix="/events", tags=["events"])
+
+
+class CreateEventRequest(BaseModel):
+    title: str
+    description: str | None = None
+    category_id: UUID | None = None
+    start_time: datetime
+    end_time: datetime
+    capacity: int = Field(gt=0)
+    category: str | None = None
+    location: str | None = None
+    location_address: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+
 
 # Public
 @router.get("/")
@@ -13,19 +39,87 @@ def get_event(event_id: str):
     pass
 
 # Organizer
-@router.post("/", dependencies=[Depends(require_group("organizer"))])
-def create_event(user: CurrentUser = Depends(get_current_user)):
-    pass
+@router.post("/create", dependencies=[Depends(require_role(UserRole.organizer))])
+def create_event(
+    payload: CreateEventRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    if payload.end_time <= payload.start_time:
+        raise HTTPException(status_code=400, detail="end_time must be after start_time")
+
+    if payload.category:
+        category = db.query(Category).filter_by(name=payload.category).first()
+        if not category:
+            category = Category(name=payload.category)
+            db.add(category)
+            db.flush()
+        payload.category_id = category.id
+    event = Event(
+        organizer_id=user.id,
+        category_id=payload.category_id,
+        title=payload.title,
+        description=payload.description,
+        start_time=payload.start_time,
+        end_time=payload.end_time,
+        location=payload.location,
+        location_address=payload.location_address,
+        latitude=payload.latitude,
+        longitude=payload.longitude,
+        capacity=payload.capacity,
+        status=EventStatus.pending_approval
+    )
+
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+
+    return {
+        "message": "Event created",
+        "event_id": str(event.id),
+        "status": event.status
+    }
 
 @router.patch("/{event_id}")
-def update_event(event_id: str, user: CurrentUser = Depends(get_current_user)):
+def update_event(event_id: str, user: User = Depends(get_current_user)):
     # Check ownership in real implementation
     pass
 
 @router.delete("/{event_id}")
-def delete_event(event_id: str, user: CurrentUser = Depends(get_current_user)):
-    pass
+def delete_event(
+    event_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(UserRole.organizer))
+):
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(404, "Event not found")
+
+    if event.organizer_id != user.id:
+        raise HTTPException(403, "You can only cancel your own events")
+
+    if event.status == EventStatus.cancelled:
+        raise HTTPException(400, "Event is already cancelled")
+
+    registrations = db.query(Registration).filter(
+        Registration.event_id == event.id,
+        Registration.status == RegistrationStatus.confirmed,
+    ).all()
+
+    for registration in registrations:
+        registration.status = RegistrationStatus.cancelled
+
+    event.status = EventStatus.cancelled
+    db.commit()
+    db.refresh(event)
+
+    return {
+        "message": "Event cancelled",
+        "event_id": str(event.id),
+        "status": event.status,
+        "cancelled_registrations": len(registrations),
+    }
 
 @router.get("/mine")
-def get_my_events(user: CurrentUser = Depends(require_group("organizer"))):
+def get_my_events(user: User = Depends(require_role(UserRole.organizer))):
     pass
