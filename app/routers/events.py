@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.Category import Category
 from app.models.Event import Event, EventStatus
+from app.models.Registration import Registration, RegistrationStatus
 from app.models.User import User, UserRole
 from app.dependencies import get_current_user, require_role
 
@@ -85,8 +86,39 @@ def update_event(event_id: str, user: User = Depends(get_current_user)):
     pass
 
 @router.delete("/{event_id}")
-def delete_event(event_id: str, user: User = Depends(get_current_user)):
-    pass
+def delete_event(
+    event_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(UserRole.organizer))
+):
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(404, "Event not found")
+
+    if event.organizer_id != user.id:
+        raise HTTPException(403, "You can only cancel your own events")
+
+    if event.status == EventStatus.cancelled:
+        raise HTTPException(400, "Event is already cancelled")
+
+    registrations = db.query(Registration).filter(
+        Registration.event_id == event.id,
+        Registration.status == RegistrationStatus.confirmed,
+    ).all()
+
+    for registration in registrations:
+        registration.status = RegistrationStatus.cancelled
+
+    event.status = EventStatus.cancelled
+    db.commit()
+    db.refresh(event)
+
+    return {
+        "message": "Event cancelled",
+        "event_id": str(event.id),
+        "status": event.status,
+        "cancelled_registrations": len(registrations),
+    }
 
 @router.get("/mine")
 def get_my_events(user: User = Depends(require_role(UserRole.organizer))):
