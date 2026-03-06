@@ -1,20 +1,12 @@
-import os
-import boto3
-
 from fastapi import Request, HTTPException, Depends
 from sqlalchemy.orm import Session
 from app.database import get_db
+from app.cognito_utils import get_cognito_client, get_user_pool_id
 from app.models.User import User, UserRole
 
-
-
-cognito_client = boto3.client("cognito-idp")
-USER_POOL_ID = os.environ["COGNITO_USER_POOL_ID"]
-
-
 def fetch_cognito_user(sub: str):
-    response = cognito_client.admin_get_user(
-        UserPoolId=USER_POOL_ID,
+    response = get_cognito_client().admin_get_user(
+        UserPoolId=get_user_pool_id(),
         Username=sub
     )
 

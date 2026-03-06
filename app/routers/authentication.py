@@ -1,25 +1,21 @@
 import os
 from fastapi import HTTPException, APIRouter
 from pydantic import BaseModel, EmailStr
-import boto3
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
+from app.cognito_utils import get_cognito_client, get_user_pool_id
 
 load_dotenv()
 
-AWS_REGION = os.getenv("AWS_REGION")
-USER_POOL_ID = os.getenv("COGNITO_USER_POOL_ID")
 CLIENT_ID = os.getenv("COGNITO_CLIENT_ID")
-
-if not all([AWS_REGION, USER_POOL_ID, CLIENT_ID]):
-    print("ENV DEBUG:")
-    print("AWS_REGION:", AWS_REGION)
-    print("USER_POOL_ID:", USER_POOL_ID)
-    print("CLIENT_ID:", CLIENT_ID)
-    raise Exception("Missing required environment variables.")
-
-cognito = boto3.client("cognito-idp", region_name=AWS_REGION)
 router = APIRouter(prefix="/auth", tags=["authentication"])
+
+
+def ensure_auth_config():
+    get_user_pool_id()
+    if not CLIENT_ID:
+        raise HTTPException(status_code=500, detail="COGNITO_CLIENT_ID is not configured")
+    return get_cognito_client()
 
 class SignUpRequest(BaseModel):
     name: str
@@ -43,6 +39,7 @@ class LogoutRequest(BaseModel):
 
 @router.post("/signup")
 def signup(data: SignUpRequest):
+    cognito = ensure_auth_config()
     try:
         response = cognito.sign_up(
             ClientId=CLIENT_ID,
@@ -65,6 +62,7 @@ def signup(data: SignUpRequest):
 
 @router.post("/confirm")
 def confirm_signup(data: ConfirmRequest):
+    cognito = ensure_auth_config()
     try:
         cognito.confirm_sign_up(
             ClientId=CLIENT_ID,
@@ -77,6 +75,7 @@ def confirm_signup(data: ConfirmRequest):
 
 @router.post("/login")
 def login(data: LoginRequest):
+    cognito = ensure_auth_config()
     try:
         response = cognito.initiate_auth(
             ClientId=CLIENT_ID,
@@ -88,14 +87,18 @@ def login(data: LoginRequest):
         )
 
         return response["AuthenticationResult"]
-    except cognito.exceptions.NotAuthorizedException:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    except cognito.exceptions.UserNotConfirmedException:
-        raise HTTPException(status_code=403, detail="User not confirmed")
+    except ClientError as e:
+        error_code = e.response.get("Error", {}).get("Code", "")
+        if error_code == "NotAuthorizedException":
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        if error_code == "UserNotConfirmedException":
+            raise HTTPException(status_code=403, detail="User not confirmed")
+        raise HTTPException(status_code=400, detail=e.response["Error"]["Message"])
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 def refresh_token(data: RefreshRequest):
+    cognito = ensure_auth_config()
     try:
         response = cognito.initiate_auth(
             ClientId=CLIENT_ID,
@@ -112,6 +115,7 @@ def refresh_token(data: RefreshRequest):
 
 @router.post("/logout")
 def logout_user(data: LogoutRequest):
+    cognito = ensure_auth_config()
     try:
         cognito.global_sign_out(
             AccessToken=data.access_token,

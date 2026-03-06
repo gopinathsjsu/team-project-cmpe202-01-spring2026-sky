@@ -2,9 +2,8 @@ from uuid import UUID
 
 from ..database import get_db
 from fastapi import APIRouter, Depends, HTTPException
+from app.cognito_utils import get_cognito_client, get_user_pool_id
 from app.dependencies import require_role
-import boto3
-import os
 from app.services.organizer_request_service import (
     get_all_pending_requests,
     get_request_by_id,
@@ -14,19 +13,11 @@ from app.models.organizer_request import RequestStatus
 from app.models.Event import Event, EventStatus
 from app.models.User import User, UserRole
 from sqlalchemy.orm import Session
-
-
-
-AWS_REGION = os.getenv("AWS_REGION")
-USER_POOL_ID = os.getenv("COGNITO_USER_POOL_ID") or os.getenv("USER_POOL_ID")
-
-cognito = boto3.client("cognito-idp", region_name=AWS_REGION)
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 def ensure_cognito_config():
-    if not USER_POOL_ID:
-        raise HTTPException(status_code=500, detail="COGNITO_USER_POOL_ID is not configured")
+    return get_user_pool_id()
 
 
 @router.get("/events/pending", dependencies=[Depends(require_role(UserRole.admin))])
@@ -56,7 +47,8 @@ def promote_user(
     db: Session = Depends(get_db),
     admin_user: User = Depends(require_role(UserRole.admin))
 ):
-    ensure_cognito_config()
+    user_pool_id = ensure_cognito_config()
+    cognito = get_cognito_client()
     
     user = db.query(User).filter_by(id=user_id).first()
     if not user:
@@ -66,13 +58,13 @@ def promote_user(
         raise HTTPException(403, "Cannot modify your own admin role")
 
     cognito.admin_add_user_to_group(
-        UserPoolId=USER_POOL_ID,
+        UserPoolId=user_pool_id,
         Username=user.cognito_sub,
         GroupName="admin"
     )
 
     cognito.admin_remove_user_from_group(
-        UserPoolId=USER_POOL_ID,
+        UserPoolId=user_pool_id,
         Username=user.cognito_sub,
         GroupName="admin"
     )
@@ -89,7 +81,8 @@ def revoke_admin_role(
     db: Session = Depends(get_db),
     admin_user: User = Depends(require_role(UserRole.admin))
 ):
-    ensure_cognito_config()
+    user_pool_id = ensure_cognito_config()
+    cognito = get_cognito_client()
 
     user = db.query(User).filter_by(id=user_id).first()
     if not user:
@@ -102,13 +95,13 @@ def revoke_admin_role(
         raise HTTPException(400, "User is not an admin")
 
     cognito.admin_remove_user_from_group(
-        UserPoolId=USER_POOL_ID,
+        UserPoolId=user_pool_id,
         Username=user.cognito_sub,
         GroupName="admin"
     )
 
     cognito.admin_add_user_to_group(
-        UserPoolId=USER_POOL_ID,
+        UserPoolId=user_pool_id,
         Username=user.cognito_sub,
         GroupName="attendee"
     )
@@ -133,7 +126,8 @@ def approve_request(
     db: Session = Depends(get_db),
     admin_user: User = Depends(require_role(UserRole.admin))
 ):
-    ensure_cognito_config()
+    user_pool_id = ensure_cognito_config()
+    cognito = get_cognito_client()
     request = get_request_by_id(db, request_id)
 
     if not request:
@@ -151,14 +145,14 @@ def approve_request(
 
     # Remove attendee
     cognito.admin_remove_user_from_group(
-        UserPoolId=USER_POOL_ID,
+        UserPoolId=user_pool_id,
         Username=cognito_sub,
         GroupName="attendee"
     )
 
     # Add organizer
     cognito.admin_add_user_to_group(
-        UserPoolId=USER_POOL_ID,
+        UserPoolId=user_pool_id,
         Username=cognito_sub,
         GroupName="organizer"
     )
