@@ -4,6 +4,7 @@ from app.database import get_db
 from app.cognito_utils import get_cognito_client, get_user_pool_id
 from app.models.User import User, UserRole
 
+
 def fetch_cognito_user(sub: str):
     response = get_cognito_client().admin_get_user(
         UserPoolId=get_user_pool_id(),
@@ -18,6 +19,17 @@ def fetch_cognito_user(sub: str):
     return attributes
 
 
+def resolve_user_role(groups) -> UserRole:
+    if isinstance(groups, str):
+        groups = [group.strip() for group in groups.split(",") if group.strip()]
+
+    if "admin" in groups:
+        return UserRole.admin
+    if "organizer" in groups:
+        return UserRole.organizer
+    return UserRole.attendee
+
+
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     claims = (
         request.scope.get("aws.event", {})
@@ -28,18 +40,21 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     )
 
     groups = claims.get("cognito:groups", [])
-    role = UserRole.admin if "admin" in groups else UserRole.attendee
+    role = resolve_user_role(groups)
 
     if not claims:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    print(claims)
     sub = claims.get("sub")
 
     if not sub:
         raise HTTPException(status_code=401, detail="Unauthorized")
     user = db.query(User).filter_by(cognito_sub=sub).first()
     if user:
+        if user.role != role:
+            user.role = role
+            db.commit()
+            db.refresh(user)
         return user
     
     cognito_attributes = fetch_cognito_user(sub)
