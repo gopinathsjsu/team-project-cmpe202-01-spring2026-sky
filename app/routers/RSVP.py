@@ -8,6 +8,7 @@ from app.models.User import User, UserRole
 from app.dependencies import get_current_user, require_role
 from app.services.registration_service import (
     cancel_user_registration,
+    list_user_registrations,
     register_user_for_event,
 )
 
@@ -47,5 +48,8 @@ def cancel_rsvp(
 
 
 @router.get("/me")
-def my_rsvps(user: User = Depends(get_current_user)):
-    return {"message": "List my RSVPs"}
+def my_rsvps(
+    user: User = Depends(require_role(UserRole.attendee)),
+    db: Session = Depends(get_db),
+):
+    return list_user_registrations(db, user)

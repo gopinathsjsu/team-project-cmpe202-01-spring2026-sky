@@ -5,6 +5,7 @@ from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.models.Category import Category
 from app.models.Event import Event, EventStatus
 from app.models.Registration import Registration, RegistrationStatus
 from app.models.User import User, UserRole
@@ -68,7 +69,7 @@ def cancel_user_registration(
     if not event:
         raise HTTPException(404, "Event not found")
 
-    
+
 
     if event.status == EventStatus.cancelled:
         raise HTTPException(400, "Event is already cancelled")
@@ -88,7 +89,71 @@ def cancel_user_registration(
         db.commit()
         db.refresh(registration)
         return event, registration
-        
+
+
+def list_user_registrations(
+    db: Session,
+    user: User,
+):
+    confirmed_subquery = (
+        db.query(
+            Registration.event_id.label("event_id"),
+            func.coalesce(func.sum(Registration.quantity), 0).label("registered_count"),
+        )
+        .filter(Registration.status == RegistrationStatus.confirmed)
+        .group_by(Registration.event_id)
+        .subquery()
+    )
+
+    rows = (
+        db.query(
+            Registration,
+            Event,
+            Category.name.label("category_name"),
+            confirmed_subquery.c.registered_count,
+        )
+        .join(Event, Event.id == Registration.event_id)
+        .outerjoin(Category, Event.category_id == Category.id)
+        .outerjoin(confirmed_subquery, confirmed_subquery.c.event_id == Event.id)
+        .filter(
+            Registration.user_id == user.id,
+            Registration.status == RegistrationStatus.confirmed,
+        )
+        .order_by(Event.start_time)
+        .all()
+    )
+
+    result = []
+    for registration, event, category_name, registered_count in rows:
+        confirmed = int(registered_count or 0)
+        result.append(
+            {
+                "registration_id": str(registration.id),
+                "status": registration.status,
+                "quantity": registration.quantity,
+                "registered_at": registration.registered_at,
+                "event": {
+                    "id": str(event.id),
+                    "title": event.title,
+                    "description": event.description,
+                    "category_id": str(event.category_id) if event.category_id else None,
+                    "category": category_name,
+                    "start_time": event.start_time,
+                    "end_time": event.end_time,
+                    "location": event.location,
+                    "location_address": event.location_address,
+                    "latitude": float(event.latitude) if event.latitude is not None else None,
+                    "longitude": float(event.longitude) if event.longitude is not None else None,
+                    "capacity": event.capacity,
+                    "registered_count": confirmed,
+                    "remaining_capacity": max(event.capacity - confirmed, 0),
+                    "status": event.status,
+                },
+            }
+        )
+
+    return result
+
 
 def cancel_event_by_organizer(db, user, event_id):
     event = db.query(Event).filter(Event.id == event_id).first()
@@ -97,10 +162,10 @@ def cancel_event_by_organizer(db, user, event_id):
 
     if event.organizer_id != user.id:
         raise HTTPException(403, "You can only cancel your own events")
-    
+
     if event.status == EventStatus.cancelled:
         raise HTTPException(400, "Event has already been cancelled")
-    
+
     registrations = db.query(Registration).filter(
         Registration.event_id == event.id,
         Registration.status == RegistrationStatus.confirmed).all()
