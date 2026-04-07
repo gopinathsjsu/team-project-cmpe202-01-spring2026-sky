@@ -9,6 +9,9 @@ from app.models.Category import Category
 from app.models.Event import Event, EventStatus
 from app.models.Registration import Registration, RegistrationStatus
 from app.models.User import User, UserRole
+from app.services.calendar_service import (
+    build_event_google_calendar_url,
+)
 
 
 def register_user_for_event(
@@ -89,7 +92,6 @@ def cancel_user_registration(
         raise HTTPException(404, "Event not found")
 
 
-
     if event.status == EventStatus.cancelled:
         raise HTTPException(400, "Event is already cancelled")
 
@@ -145,6 +147,7 @@ def list_user_registrations(
     result = []
     for registration, event, category_name, registered_count in rows:
         confirmed = int(registered_count or 0)
+        google_calendar_url = build_event_google_calendar_url(event)
         result.append(
             {
                 "registration_id": str(registration.id),
@@ -166,6 +169,7 @@ def list_user_registrations(
                     "capacity": event.capacity,
                     "registered_count": confirmed,
                     "remaining_capacity": max(event.capacity - confirmed, 0),
+                    "google_calendar_url": google_calendar_url,
                     "status": event.status,
                 },
             }

@@ -10,6 +10,7 @@ from app.models.Category import Category
 from app.models.Event import Event, EventStatus
 from app.models.Registration import Registration, RegistrationStatus
 from app.models.User import User
+from app.services.calendar_service import build_event_google_calendar_url
 from app.services.registration_service import cancel_event_by_organizer
 
 
@@ -86,6 +87,7 @@ def event_payload(
 ):
     confirmed = int(confirmed_registrations or 0)
     remaining_capacity = max(event.capacity - confirmed, 0)
+    google_calendar_url = build_event_google_calendar_url(event)
     return {
         "id": str(event.id),
         "title": event.title,
@@ -101,6 +103,7 @@ def event_payload(
         "capacity": event.capacity,
         "registered_count": confirmed,
         "remaining_capacity": remaining_capacity,
+        "google_calendar_url": google_calendar_url,
         "user_registration_status": (
             user_registration.status if user_registration else None
         ),
