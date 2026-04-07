@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from pydantic import BaseModel, Field
-from fastapi import Request, APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -13,27 +13,40 @@ from app.services.organizer_request_service import (
     get_pending_request,
 )
 
-
-        
 router = APIRouter(prefix="/users", tags=["users"])
+
+
+def _serialize_user(user: User) -> dict:
+    return {
+        "id": str(user.id),
+        "cognito_sub": user.cognito_sub,
+        "email": user.email,
+        "role": user.role,
+        "is_active": user.is_active,
+        "created_at": user.created_at,
+        "updated_at": user.updated_at,
+    }
 
 
 class RegisterEventRequest(BaseModel):
     event_id: UUID
     quantity: int = Field(default=1, gt=0)
 
+
 @router.get("/me")
-def get_profile(request:Request, user: User = Depends(get_current_user)):
-    event = request.scope.get("aws.event", {})
-    print("EVENT:", event)
+def get_profile(user: User = Depends(get_current_user)):
+    return _serialize_user(user)
+
 
 @router.patch("/me")
-def update_profile(user: User = Depends(get_current_user)):
-    pass
+def update_profile(_user: User = Depends(get_current_user)):
+    raise HTTPException(status_code=501, detail="Profile updates are not implemented")
+
 
 @router.get("/", dependencies=[Depends(require_role(UserRole.admin))])
 def list_users():
-    pass
+    raise HTTPException(status_code=501, detail="Listing users is not implemented")
+
 
 @router.post("/me/request-organizer")
 def request_organizer_upgrade(
@@ -47,6 +60,7 @@ def request_organizer_upgrade(
     create_request(db, user.id)
 
     return {"message": "Organizer request submitted"}
+
 
 @router.post("/registerEvent")
 def register_for_event(

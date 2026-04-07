@@ -97,6 +97,7 @@ def login(data: LoginRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@router.post("/refresh")
 def refresh_token(data: RefreshRequest):
     cognito = ensure_auth_config()
     try:

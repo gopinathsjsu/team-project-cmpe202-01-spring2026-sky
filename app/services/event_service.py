@@ -118,33 +118,40 @@ def list_events_service(
     confirmed_subquery = _confirmed_registration_subquery(db)
     user = _resolve_optional_user(request, db)
 
-    query = (
+    base_query = (
         db.query(
             Event,
             Category.name.label("category_name"),
             confirmed_subquery.c.confirmed_registrations,
-            Registration,
         )
         .outerjoin(Category, Event.category_id == Category.id)
         .outerjoin(confirmed_subquery, confirmed_subquery.c.event_id == Event.id)
     )
 
     if user:
-        query = query.outerjoin(
-            Registration,
-            and_(
-                Registration.event_id == Event.id,
-                Registration.user_id == user.id,
-            ),
+        rows = (
+            base_query.add_columns(Registration)
+            .outerjoin(
+                Registration,
+                and_(
+                    Registration.event_id == Event.id,
+                    Registration.user_id == user.id,
+                ),
+            )
+            .filter(
+                Event.status == EventStatus.approved,
+            )
+            .order_by(Event.start_time)
+            .all()
         )
-    else:
-        query = query.outerjoin(
-            Registration,
-            Registration.event_id == Event.id,
-        ).filter(Registration.id.is_(None))
+
+        return [
+            event_payload(event, category_name, confirmed_registrations, user_registration)
+            for event, category_name, confirmed_registrations, user_registration in rows
+        ]
 
     rows = (
-        query.filter(
+        base_query.filter(
             Event.status == EventStatus.approved,
         )
         .order_by(Event.start_time)
@@ -152,9 +159,10 @@ def list_events_service(
     )
 
     return [
-        event_payload(event, category_name, confirmed_registrations, user_registration)
-        for event, category_name, confirmed_registrations, user_registration in rows
+        event_payload(event, category_name, confirmed_registrations)
+        for event, category_name, confirmed_registrations in rows
     ]
+
 
 
 def create_event_service(

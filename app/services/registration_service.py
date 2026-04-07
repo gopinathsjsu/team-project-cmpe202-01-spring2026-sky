@@ -11,28 +11,46 @@ from app.models.Registration import Registration, RegistrationStatus
 from app.models.User import User, UserRole
 
 
-def register_user_for_event(db, user, event_id, quantity = 1,):
-    event = db.query(Event).filter(Event.id == event_id).first()
+def register_user_for_event(
+    db: Session,
+    user: User,
+    event_id: UUID,
+    quantity: int = 1,
+):
+    event = (
+        db.query(Event)
+        .filter(Event.id == event_id)
+        .with_for_update()
+        .first()
+    )
     if not event:
         raise HTTPException(404, "Event not found")
 
     if event.status != EventStatus.approved:
         raise HTTPException(400, "Event is not open for registration")
 
-    existing_registration = db.query(Registration).filter(
-        Registration.user_id == user.id,
-        Registration.event_id == event.id,
-    ).first()
+    existing_registration = (
+        db.query(Registration)
+        .filter(
+            Registration.user_id == user.id,
+            Registration.event_id == event.id,
+        )
+        .with_for_update()
+        .first()
+    )
 
     if existing_registration and existing_registration.status == RegistrationStatus.confirmed:
         raise HTTPException(400, "User is already registered for this event")
 
-    confirmed_registrations = db.query(
-        func.coalesce(func.sum(Registration.quantity), 0)
-    ).filter(
-        Registration.event_id == event.id,
-        Registration.status == RegistrationStatus.confirmed,
-    ).scalar()
+    confirmed_registrations = int(
+        db.query(
+            func.coalesce(func.sum(Registration.quantity), 0)
+        ).filter(
+            Registration.event_id == event.id,
+            Registration.status == RegistrationStatus.confirmed,
+        ).scalar()
+        or 0
+    )
 
     if confirmed_registrations + quantity > event.capacity:
         raise HTTPException(400, "Event is full")
@@ -58,6 +76,7 @@ def register_user_for_event(db, user, event_id, quantity = 1,):
 
     remaining_capacity = event.capacity - (confirmed_registrations + registration.quantity)
     return event, registration, remaining_capacity
+
 
 
 def cancel_user_registration(
