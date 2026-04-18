@@ -2,6 +2,7 @@ from uuid import UUID
 
 from ..database import get_db
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from app.cognito_utils import get_cognito_client, get_user_pool_id
 from app.dependencies import require_role
 from app.services.organizer_request_service import (
@@ -14,6 +15,10 @@ from app.models.Event import Event, EventStatus
 from app.models.User import User, UserRole
 from sqlalchemy.orm import Session
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+class RejectEventRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)
 
 
 def ensure_cognito_config():
@@ -29,17 +34,33 @@ def pending_events(db: Session = Depends(get_db)):
 def approve_event(event_id: UUID, db: Session = Depends(get_db)):
     event = get_pending_event_or_raise_exception(db, event_id)
     event.status = EventStatus.approved
+    event.rejection_reason = None
     db.commit()
     db.refresh(event)
-    return {"message": "Event approved", "event_id": str(event.id), "status": event.status}
+    return {
+        "message": "Event approved",
+        "event_id": str(event.id),
+        "status": event.status,
+        "rejection_reason": event.rejection_reason,
+    }
 
 @router.patch("/events/{event_id}/reject", dependencies=[Depends(require_role(UserRole.admin))])
-def reject_event(event_id: UUID, db: Session = Depends(get_db)):
+def reject_event(
+    event_id: UUID,
+    payload: RejectEventRequest,
+    db: Session = Depends(get_db),
+):
     event = get_pending_event_or_raise_exception(db, event_id)
     event.status = EventStatus.rejected
+    event.rejection_reason = payload.reason.strip()
     db.commit()
     db.refresh(event)
-    return {"message": "Event rejected", "event_id": str(event.id), "status": event.status}
+    return {
+        "message": "Event rejected",
+        "event_id": str(event.id),
+        "status": event.status,
+        "rejection_reason": event.rejection_reason,
+    }
 
 @router.patch("/users/{user_id}/promote")
 def promote_user(

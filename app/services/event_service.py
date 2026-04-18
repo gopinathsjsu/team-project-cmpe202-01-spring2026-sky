@@ -92,6 +92,7 @@ def event_payload(
         "id": str(event.id),
         "title": event.title,
         "description": event.description,
+        "rejection_reason": getattr(event, "rejection_reason", None),
         "category_id": str(event.category_id) if event.category_id else None,
         "category": category_name,
         "start_time": event.start_time,
@@ -243,6 +244,8 @@ def update_event_service(
         event.title = updates["title"]
     if "description" in updates:
         event.description = updates["description"]
+    if "rejection_reason" in updates:
+        event.rejection_reason = updates["rejection_reason"]
     if "start_time" in updates:
         event.start_time = updates["start_time"]
     if "end_time" in updates:
@@ -265,6 +268,7 @@ def update_event_service(
 
     previous_status = event.status
     event.status = EventStatus.pending_approval
+    event.rejection_reason = None
 
     db.commit()
     db.refresh(event)
