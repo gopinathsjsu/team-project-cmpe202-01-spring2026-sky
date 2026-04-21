@@ -3,19 +3,23 @@ from fastapi import FastAPI, Depends
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.database import SessionLocal
-from app.routers import users, events, authentication
+from app.routers import users, events, authentication, RSVP, admin
 from . import models  # noqa: F401
 from .database import engine, Base
+from mangum import Mangum
 
 load_dotenv()
 
 app = FastAPI(title="Event Platform API")
+handler = Mangum(app)
 Base.metadata.create_all(bind=engine)
-print(Base.metadata.tables.keys())
 
 app.include_router(users.router)
 app.include_router(events.router)
 app.include_router(authentication.router)
+app.include_router(RSVP.router)
+app.include_router(admin.router)
+
 
 @app.get("/")
 def root():
