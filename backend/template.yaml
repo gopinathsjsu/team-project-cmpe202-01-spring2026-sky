@@ -1,0 +1,156 @@
+
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: FastAPI Lambda Backend with Cognito JWT
+
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: python3.11
+    Architectures:
+      - arm64
+      
+Resources:
+
+  MyHttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: $default
+      CorsConfiguration:
+        AllowOrigins:
+          - "https://eventsphere-hub.vercel.app"
+          - "https://eventsphere-i87lm1gsz-luckills-projects.vercel.app"
+          - "http://localhost:8080"
+          - "http://127.0.0.1:8080"
+        AllowMethods:
+          - GET
+          - POST
+          - PATCH
+          - DELETE
+          - OPTIONS
+        AllowHeaders:
+          - Authorization
+          - Content-Type
+        AllowCredentials: true
+      Auth:
+        Authorizers:
+          MyJwtAuthorizer:
+            JwtConfiguration:
+              issuer: https://cognito-idp.us-west-1.amazonaws.com/us-west-1_sidH4PjIl
+              audience:
+                - 6s5le12j31nie7h98v4nji57bf
+            IdentitySource: "$request.header.Authorization"
+
+  FastApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: app.app.handler
+      Events:
+        HealthRoute:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref MyHttpApi
+            Path: /health
+            Method: GET
+
+        RootRoute:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref MyHttpApi
+            Path: /
+            Method: GET
+            
+        AuthRoute:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref MyHttpApi
+            Path: /auth/{proxy+}
+            Method: ANY
+        LogoutRoute:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref MyHttpApi
+            Path: /auth/logout
+            Method: POST
+            Auth:
+              Authorizer: MyJwtAuthorizer
+
+        RefreshTokenRoute:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref MyHttpApi
+            Path: /auth/refreshtoken
+            Method: POST
+            Auth:
+              Authorizer: MyJwtAuthorizer
+
+        AdminRoutes:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref MyHttpApi
+            Path: /admin/{proxy+}
+            Method: ANY
+            Auth:
+              Authorizer: MyJwtAuthorizer
+
+        EventRoutes:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref MyHttpApi
+            Path: /events/{proxy+}
+            Method: ANY
+            Auth:
+              Authorizer: MyJwtAuthorizer
+
+        PublicEventListRoute:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref MyHttpApi
+            Path: /events
+            Method: GET
+
+        PublicEventListSlashRoute:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref MyHttpApi
+            Path: /events/
+            Method: GET
+
+        PublicEventCategoriesRoute:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref MyHttpApi
+            Path: /events/categories
+            Method: GET
+
+        PublicEventDetailRoute:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref MyHttpApi
+            Path: /events/{event_id}
+            Method: GET
+
+        UserRoutes:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref MyHttpApi
+            Path: /users/{proxy+}
+            Method: ANY
+            Auth:
+              Authorizer: MyJwtAuthorizer
+
+        RSVPRoutes:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref MyHttpApi
+            Path: /rsvp/{proxy+}
+            Method: ANY
+            Auth:
+              Authorizer: MyJwtAuthorizer
+
+
+Outputs:
+  ApiEndpoint:
+    Description: API URL
+    Value: !Sub "https://${MyHttpApi}.execute-api.${AWS::Region}.amazonaws.com"

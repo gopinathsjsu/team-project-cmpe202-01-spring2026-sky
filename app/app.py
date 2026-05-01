@@ -16,6 +16,7 @@ app = FastAPI(title="Event Platform API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        "https://eventsphere-hub.vercel.app",
         "https://eventsphere-i87lm1gsz-luckills-projects.vercel.app",
         "http://localhost:8080",
         "http://127.0.0.1:8080",
