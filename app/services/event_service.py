@@ -115,6 +115,30 @@ def event_payload(
     }
 
 
+def event_detail_payload(
+    event: Event,
+    category_name: str | None,
+    confirmed_registrations: int | None,
+    organizer: User,
+    user_registration: Registration | None = None,
+):
+    payload = event_payload(
+        event,
+        category_name,
+        confirmed_registrations,
+        user_registration,
+    )
+    payload["schedule"] = {
+        "start_time": event.start_time,
+        "end_time": event.end_time,
+    }
+    payload["organizer"] = {
+        "name": organizer.name,
+        "email": organizer.email,
+    }
+    return payload
+
+
 def list_events_service(
     request: Request,
     db: Session,
@@ -418,7 +442,9 @@ def get_event_service(
         db.query(
             Event,
             Category.name.label("category_name"),
+            User,
         )
+        .join(User, Event.organizer_id == User.id)
         .outerjoin(Category, Event.category_id == Category.id)
         .filter(
             Event.id == event_id,
@@ -430,21 +456,25 @@ def get_event_service(
     if not row:
         raise HTTPException(status_code=404, detail="Event not found")
 
-    event, category_name = row
+    event, category_name, organizer = row
     confirmed_registrations = _confirmed_registration_count(db, event.id)
-    user = _resolve_optional_user(request, db)
+    current_user = _resolve_optional_user(request, db)
 
     user_registration = None
-    if user:
+    if current_user:
         user_registration = (
             db.query(Registration)
             .filter(
-                Registration.user_id == user.id,
+                Registration.user_id == current_user.id,
                 Registration.event_id == event.id,
             )
             .first()
         )
 
-    return event_payload(
-        event, category_name, confirmed_registrations, user_registration
+    return event_detail_payload(
+        event,
+        category_name,
+        confirmed_registrations,
+        organizer,
+        user_registration,
     )

@@ -16,6 +16,7 @@ def _serialize_user(user: User) -> dict:
     return {
         "id": str(user.id),
         "cognito_sub": user.cognito_sub,
+        "name": user.name,
         "email": user.email,
         "role": user.role,
         "is_active": user.is_active,

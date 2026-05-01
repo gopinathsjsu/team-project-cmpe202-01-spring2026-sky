@@ -23,6 +23,7 @@ class User(Base, TimestampMixin):
 
     id: Mapped[PyUUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     cognito_sub: Mapped[str] = mapped_column(String, unique=True)
+    name: Mapped[str | None] = mapped_column(String, nullable=True)
     email: Mapped[str] = mapped_column(String, nullable=False)
     role: Mapped[UserRole] = mapped_column(Enum(UserRole))
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

@@ -165,6 +165,13 @@ def _extract_claims(request: Request) -> tuple[dict, str]:
     return decoded, "authorization_header"
 
 
+def _clean_optional_string(value) -> str | None:
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    return value or None
+
+
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     claims, _ = _extract_claims(request)
     if not claims:
@@ -180,8 +187,21 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     user = db.query(User).filter_by(cognito_sub=sub).first()
 
     if user:
+        name = _clean_optional_string(claims.get("name"))
+        if not name and not user.name:
+            try:
+                cognito_attributes = fetch_cognito_user(sub)
+                name = _clean_optional_string(cognito_attributes.get("name"))
+            except Exception:
+                name = None
+        changed = False
         if user.role != resolved_role:
             user.role = resolved_role
+            changed = True
+        if name and user.name != name:
+            user.name = name
+            changed = True
+        if changed:
             db.commit()
             db.refresh(user)
         return user
@@ -198,8 +218,13 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     if not email:
         raise HTTPException(status_code=400, detail="Authenticated user email is missing")
 
+    name = _clean_optional_string(claims.get("name")) or _clean_optional_string(
+        cognito_attributes.get("name")
+    )
+
     user = User(
         cognito_sub=sub,
+        name=name,
         email=email,
         role=resolved_role,
     )
