@@ -1,6 +1,14 @@
 name: Run Alembic Migrations
 
 on:
+    push:
+        branches:
+            - zl-dev-branch
+        paths:
+            - alembic.ini
+            - app/**
+            - migrations/**
+            - requirements.txt
     workflow_dispatch:
 
 concurrency:
