@@ -1,0 +1,45 @@
+name: Run Alembic Migrations
+
+on:
+    workflow_dispatch:
+
+concurrency:
+    group: production-migrations
+    cancel-in-progress: false
+
+jobs:
+    migrate:
+        runs-on: ubuntu-latest
+        env:
+            DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+            PGCONNECT_TIMEOUT: "10"
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Setup Python
+              uses: actions/setup-python@v5
+              with:
+                  python-version: "3.11"
+
+            - name: Validate production database secret
+              run: |
+                  if [ -z "$DATABASE_URL" ]; then
+                    echo "PROD_DATABASE_URL secret is not configured."
+                    exit 1
+                  fi
+
+            - name: Install dependencies
+              run: |
+                  python -m pip install --upgrade pip
+                  pip install -r requirements.txt
+
+            - name: Show current revision before migration
+              run: alembic current
+
+            - name: Upgrade production database
+              run: alembic upgrade head
+
+            - name: Show current revision after migration
+              run: alembic current
