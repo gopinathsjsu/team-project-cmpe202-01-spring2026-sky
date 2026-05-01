@@ -370,6 +370,45 @@ def get_my_events_service(
     ]
 
 
+def list_event_attendees_service(
+    event_id: UUID,
+    db: Session,
+    user: User,
+):
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    if event.organizer_id != user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="You can only view attendees for your own events",
+        )
+
+    rows = (
+        db.query(Registration, User)
+        .join(User, User.id == Registration.user_id)
+        .filter(
+            Registration.event_id == event.id,
+            Registration.status == RegistrationStatus.confirmed,
+        )
+        .order_by(Registration.registered_at, User.email)
+        .all()
+    )
+
+    return [
+        {
+            "registration_id": str(registration.id),
+            "user_id": str(attendee.id),
+            "email": attendee.email,
+            "quantity": registration.quantity,
+            "status": registration.status,
+            "registered_at": registration.registered_at,
+        }
+        for registration, attendee in rows
+    ]
+
+
 def get_event_service(
     event_id: UUID,
     request: Request,

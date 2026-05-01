@@ -13,6 +13,7 @@ from app.services.event_service import (
     delete_event_service,
     get_event_service,
     get_my_events_service,
+    list_event_attendees_service,
     list_categories_service,
     list_events_service,
     update_event_service,
@@ -107,6 +108,15 @@ def get_my_events(
     user: User = Depends(require_role(UserRole.organizer)),
 ):
     return get_my_events_service(db=db, user=user)
+
+
+@router.get("/{event_id}/attendees")
+def list_event_attendees(
+    event_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(UserRole.organizer)),
+):
+    return list_event_attendees_service(event_id=event_id, db=db, user=user)
 
 
 @router.get("/{event_id}")
