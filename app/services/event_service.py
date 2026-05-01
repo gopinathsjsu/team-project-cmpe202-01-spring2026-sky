@@ -2,7 +2,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import HTTPException, Request
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_current_user
@@ -118,7 +118,16 @@ def event_payload(
 def list_events_service(
     request: Request,
     db: Session,
+    category_id: UUID | None = None,
+    category: str | None = None,
+    keyword: str | None = None,
 ):
+    if category_id is not None and category is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Use either category_id or category, not both",
+        )
+
     confirmed_subquery = _confirmed_registration_subquery(db)
     user = _resolve_optional_user(request, db)
 
@@ -132,6 +141,31 @@ def list_events_service(
         .outerjoin(confirmed_subquery, confirmed_subquery.c.event_id == Event.id)
     )
 
+    filters = [Event.status == EventStatus.approved]
+    if category_id is not None:
+        filters.append(Event.category_id == category_id)
+    elif category is not None:
+        category_name = category.strip()
+        if not category_name:
+            raise HTTPException(status_code=400, detail="category cannot be blank")
+        filters.append(func.lower(Category.name) == category_name.lower())
+    if keyword is not None:
+        search_term = keyword.strip()
+        if not search_term:
+            raise HTTPException(status_code=400, detail="keyword cannot be blank")
+        search_pattern = f"%{search_term.lower()}%"
+        filters.append(
+            or_(
+                func.lower(Event.title).like(search_pattern),
+                func.lower(func.coalesce(Event.description, "")).like(search_pattern),
+                func.lower(func.coalesce(Category.name, "")).like(search_pattern),
+                func.lower(func.coalesce(Event.location, "")).like(search_pattern),
+                func.lower(func.coalesce(Event.location_address, "")).like(
+                    search_pattern
+                ),
+            )
+        )
+
     if user:
         rows = (
             base_query.add_columns(Registration)
@@ -142,31 +176,48 @@ def list_events_service(
                     Registration.user_id == user.id,
                 ),
             )
-            .filter(
-                Event.status == EventStatus.approved,
-            )
+            .filter(*filters)
             .order_by(Event.start_time)
             .all()
         )
 
         return [
-            event_payload(event, category_name, confirmed_registrations, user_registration)
+            event_payload(
+                event, category_name, confirmed_registrations, user_registration
+            )
             for event, category_name, confirmed_registrations, user_registration in rows
         ]
 
-    rows = (
-        base_query.filter(
-            Event.status == EventStatus.approved,
-        )
-        .order_by(Event.start_time)
-        .all()
-    )
+    rows = base_query.filter(*filters).order_by(Event.start_time).all()
 
     return [
         event_payload(event, category_name, confirmed_registrations)
         for event, category_name, confirmed_registrations in rows
     ]
 
+
+def list_categories_service(db: Session):
+    rows = (
+        db.query(
+            Category,
+            func.count(Event.id).label("event_count"),
+        )
+        .join(Event, Event.category_id == Category.id)
+        .filter(Event.status == EventStatus.approved)
+        .group_by(Category.id)
+        .order_by(Category.name)
+        .all()
+    )
+
+    return [
+        {
+            "id": str(category.id),
+            "name": category.name,
+            "description": category.description,
+            "event_count": int(event_count),
+        }
+        for category, event_count in rows
+    ]
 
 
 def create_event_service(
@@ -355,4 +406,6 @@ def get_event_service(
             .first()
         )
 
-    return event_payload(event, category_name, confirmed_registrations, user_registration)
+    return event_payload(
+        event, category_name, confirmed_registrations, user_registration
+    )

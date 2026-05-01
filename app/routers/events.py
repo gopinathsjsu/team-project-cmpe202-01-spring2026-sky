@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -13,6 +13,7 @@ from app.services.event_service import (
     delete_event_service,
     get_event_service,
     get_my_events_service,
+    list_categories_service,
     list_events_service,
     update_event_service,
 )
@@ -51,9 +52,25 @@ class UpdateEventRequest(BaseModel):
 @router.get("/")
 def list_events(
     request: Request,
+    category_id: UUID | None = None,
+    category: str | None = Query(default=None, min_length=1),
+    keyword: str | None = Query(default=None, min_length=1),
     db: Session = Depends(get_db),
 ):
-    return list_events_service(request=request, db=db)
+    return list_events_service(
+        request=request,
+        db=db,
+        category_id=category_id,
+        category=category,
+        keyword=keyword,
+    )
+
+
+@router.get("/categories")
+def list_categories(
+    db: Session = Depends(get_db),
+):
+    return list_categories_service(db=db)
 
 
 @router.post("/create", dependencies=[Depends(require_role(UserRole.organizer))])
