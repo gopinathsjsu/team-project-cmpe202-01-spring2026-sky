@@ -1,5 +1,6 @@
 from dotenv import load_dotenv
 from fastapi import FastAPI, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.database import SessionLocal
@@ -11,6 +12,21 @@ from mangum import Mangum
 load_dotenv()
 
 app = FastAPI(title="Event Platform API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://eventsphere-hub.vercel.app",
+        "https://eventsphere-i87lm1gsz-luckills-projects.vercel.app",
+        "http://localhost:8080",
+        "http://127.0.0.1:8080",
+    ],
+    allow_origin_regex=r"https://.*-luckills-projects\.vercel\.app",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 handler = Mangum(app)
 Base.metadata.create_all(bind=engine)
 

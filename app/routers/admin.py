@@ -2,6 +2,7 @@ from uuid import UUID
 
 from ..database import get_db
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from app.cognito_utils import get_cognito_client, get_user_pool_id
 from app.dependencies import require_role
 from app.services.organizer_request_service import (
@@ -14,6 +15,24 @@ from app.models.Event import Event, EventStatus
 from app.models.User import User, UserRole
 from sqlalchemy.orm import Session
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+class RejectEventRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)
+
+
+def _serialize_organizer_request(request) -> dict:
+    user = request.user
+    return {
+        "id": str(request.id),
+        "status": request.status,
+        "message": request.message,
+        "created_at": request.created_at,
+        "user_id": str(request.user_id),
+        "user_name": user.name if user else None,
+        "user_email": user.email if user else None,
+        "user_role": user.role if user else None,
+    }
 
 
 def ensure_cognito_config():
@@ -29,17 +48,33 @@ def pending_events(db: Session = Depends(get_db)):
 def approve_event(event_id: UUID, db: Session = Depends(get_db)):
     event = get_pending_event_or_raise_exception(db, event_id)
     event.status = EventStatus.approved
+    event.rejection_reason = None
     db.commit()
     db.refresh(event)
-    return {"message": "Event approved", "event_id": str(event.id), "status": event.status}
+    return {
+        "message": "Event approved",
+        "event_id": str(event.id),
+        "status": event.status,
+        "rejection_reason": event.rejection_reason,
+    }
 
 @router.patch("/events/{event_id}/reject", dependencies=[Depends(require_role(UserRole.admin))])
-def reject_event(event_id: UUID, db: Session = Depends(get_db)):
+def reject_event(
+    event_id: UUID,
+    payload: RejectEventRequest,
+    db: Session = Depends(get_db),
+):
     event = get_pending_event_or_raise_exception(db, event_id)
     event.status = EventStatus.rejected
+    event.rejection_reason = payload.reason.strip()
     db.commit()
     db.refresh(event)
-    return {"message": "Event rejected", "event_id": str(event.id), "status": event.status}
+    return {
+        "message": "Event rejected",
+        "event_id": str(event.id),
+        "status": event.status,
+        "rejection_reason": event.rejection_reason,
+    }
 
 @router.patch("/users/{user_id}/promote")
 def promote_user(
@@ -57,17 +92,29 @@ def promote_user(
     if admin_user.id == user.id:
         raise HTTPException(403, "Cannot modify your own admin role")
 
+    if user.role == UserRole.admin:
+        raise HTTPException(400, "User is already an admin")
+
+    current_role = user.role
+
     cognito.admin_add_user_to_group(
         UserPoolId=user_pool_id,
         Username=user.cognito_sub,
         GroupName="admin"
     )
 
-    cognito.admin_remove_user_from_group(
-        UserPoolId=user_pool_id,
-        Username=user.cognito_sub,
-        GroupName="admin"
-    )
+    if current_role == UserRole.attendee:
+        cognito.admin_remove_user_from_group(
+            UserPoolId=user_pool_id,
+            Username=user.cognito_sub,
+            GroupName="attendee"
+        )
+    elif current_role == UserRole.organizer:
+        cognito.admin_remove_user_from_group(
+            UserPoolId=user_pool_id,
+            Username=user.cognito_sub,
+            GroupName="organizer"
+        )
 
     user.role = UserRole.admin
     db.commit()
@@ -117,7 +164,7 @@ def list_requests(
     db: Session = Depends(get_db),
     admin_user: User = Depends(require_role(UserRole.admin))
 ):
-    return get_all_pending_requests(db)
+    return [_serialize_organizer_request(request) for request in get_all_pending_requests(db)]
 
 
 @router.patch("/organizer-requests/{request_id}/approve")

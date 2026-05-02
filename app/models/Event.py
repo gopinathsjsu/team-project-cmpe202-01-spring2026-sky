@@ -34,6 +34,7 @@ class Event(Base, TimestampMixin):
     )
     title: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -51,3 +52,4 @@ class Event(Base, TimestampMixin):
     registrations: Mapped[list["Registration"]] = relationship(
         "Registration", back_populates="event", cascade="all, delete"
     )
+    
