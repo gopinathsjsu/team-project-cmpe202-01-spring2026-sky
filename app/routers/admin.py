@@ -78,17 +78,29 @@ def promote_user(
     if admin_user.id == user.id:
         raise HTTPException(403, "Cannot modify your own admin role")
 
+    if user.role == UserRole.admin:
+        raise HTTPException(400, "User is already an admin")
+
+    current_role = user.role
+
     cognito.admin_add_user_to_group(
         UserPoolId=user_pool_id,
         Username=user.cognito_sub,
         GroupName="admin"
     )
 
-    cognito.admin_remove_user_from_group(
-        UserPoolId=user_pool_id,
-        Username=user.cognito_sub,
-        GroupName="admin"
-    )
+    if current_role == UserRole.attendee:
+        cognito.admin_remove_user_from_group(
+            UserPoolId=user_pool_id,
+            Username=user.cognito_sub,
+            GroupName="attendee"
+        )
+    elif current_role == UserRole.organizer:
+        cognito.admin_remove_user_from_group(
+            UserPoolId=user_pool_id,
+            Username=user.cognito_sub,
+            GroupName="organizer"
+        )
 
     user.role = UserRole.admin
     db.commit()
