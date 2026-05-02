@@ -21,6 +21,20 @@ class RejectEventRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=500)
 
 
+def _serialize_organizer_request(request) -> dict:
+    user = request.user
+    return {
+        "id": str(request.id),
+        "status": request.status,
+        "message": request.message,
+        "created_at": request.created_at,
+        "user_id": str(request.user_id),
+        "user_name": user.name if user else None,
+        "user_email": user.email if user else None,
+        "user_role": user.role if user else None,
+    }
+
+
 def ensure_cognito_config():
     return get_user_pool_id()
 
@@ -150,7 +164,7 @@ def list_requests(
     db: Session = Depends(get_db),
     admin_user: User = Depends(require_role(UserRole.admin))
 ):
-    return get_all_pending_requests(db)
+    return [_serialize_organizer_request(request) for request in get_all_pending_requests(db)]
 
 
 @router.patch("/organizer-requests/{request_id}/approve")

@@ -34,8 +34,9 @@ def update_profile(_user: User = Depends(get_current_user)):
 
 
 @router.get("/", dependencies=[Depends(require_role(UserRole.admin))])
-def list_users():
-    raise HTTPException(status_code=501, detail="Listing users is not implemented")
+def list_users(db: Session = Depends(get_db)):
+    users = db.query(User).order_by(User.created_at.desc()).all()
+    return [_serialize_user(user) for user in users]
 
 
 @router.post("/me/request-organizer")
