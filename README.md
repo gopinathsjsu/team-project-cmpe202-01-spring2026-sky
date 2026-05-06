@@ -1,9 +1,14 @@
 # Eventful
+## Team name :Sky
+## Member name: Zhijun Li, Jacky Ho
 
 Eventful is a full-stack event discovery and event management platform built for a CMPE 202 team project. The system supports three roles: attendees discover and register for events, organizers create and manage events, and admins moderate platform activity. The implementation is split between a React frontend, a FastAPI backend, AWS Cognito for authentication, and PostgreSQL for application data.
 
 The project was designed around a practical platform workflow instead of a static catalog. That means event publishing is moderated, registration is capacity-aware, user roles are enforced end to end, and the frontend is wired to live cloud APIs rather than mock data.
 
+## Contribution
+Zhijun Li: backend,frontend database schema using sqlAlchemy library, deployment etc.
+Jack Ho: None
 ## Problem Statement
 
 Most event apps solve only part of the workflow: discovery, hosting, or moderation. Eventful was built to connect those concerns in one system:
